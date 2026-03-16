@@ -1,0 +1,227 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Voice Reverser</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        max-width: 600px;
+        margin: 50px auto;
+        text-align: center;
+      }
+      button {
+        padding: 10px 20px;
+        margin: 10px;
+        font-size: 16px;
+        cursor: pointer;
+      }
+      button:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
+      button.recording {
+        background: red;
+        color: white;
+      }
+      audio {
+        width: 100%;
+        margin: 10px 0;
+      }
+      #status {
+        font-weight: bold;
+        margin: 20px;
+      }
+      #timer {
+        font-size: 24px;
+        font-family: monospace;
+        margin: 20px;
+      }
+      .warning {
+        color: orange;
+      }
+      .danger {
+        color: red;
+      }
+      .play-btn {
+        background: #4caf50;
+        color: white;
+        border: none;
+        padding: 10px 20px;
+        margin: 5px;
+        border-radius: 5px;
+        cursor: pointer;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Voice Reverser (Max 30s)</h1>
+    <p>Record your voice, then play original or reversed!</p>
+
+    <button id="record" disabled>🔴 Record</button>
+    <button id="stop" disabled>⏹️ Stop</button>
+    <div id="timer">00:00</div>
+    <div id="status">Click "Record" to start (allow mic access).</div>
+
+    <div id="player"></div>
+
+    <script>
+      let mediaRecorder;
+      let audioChunks = [];
+      let audioBlob;
+      let audioContext;
+      let reversedBuffer;
+      let originalUrl;
+      let startTime;
+      let timerInterval;
+      const MAX_DURATION = 30 * 1000;
+
+      const recordBtn = document.getElementById("record");
+      const stopBtn = document.getElementById("stop");
+      const timerEl = document.getElementById("timer");
+      const status = document.getElementById("status");
+      const player = document.getElementById("player");
+
+      function formatTime(ms) {
+        const seconds = Math.floor(ms / 1000);
+        const mins = Math.floor(seconds / 60);
+        const secs = seconds % 60;
+        return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
+      }
+
+      function updateTimer() {
+        if (startTime) {
+          const elapsed = Date.now() - startTime;
+          timerEl.textContent = formatTime(elapsed);
+          const remaining = MAX_DURATION - elapsed;
+          timerEl.className =
+            remaining < 5000 ? "danger" : remaining < 10000 ? "warning" : "";
+        }
+      }
+
+      async function initRecorder() {
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({
+            audio: true,
+          });
+          mediaRecorder = new MediaRecorder(stream);
+
+          mediaRecorder.ondataavailable = (e) => audioChunks.push(e.data);
+          mediaRecorder.onstop = createPlayers;
+
+          recordBtn.onclick = () => {
+            audioChunks = [];
+            startTime = Date.now();
+            timerInterval = setInterval(updateTimer, 100);
+            mediaRecorder.start();
+            recordBtn.classList.add("recording");
+            recordBtn.textContent = "🔴 Recording...";
+            stopBtn.disabled = false;
+            status.textContent = `Recording (max 30s)`;
+
+            setTimeout(() => {
+              if (mediaRecorder.state === "recording") mediaRecorder.stop();
+            }, MAX_DURATION);
+          };
+
+          stopBtn.onclick = () => {
+            clearInterval(timerInterval);
+            mediaRecorder.stop();
+          };
+
+          recordBtn.disabled = false;
+          status.textContent = "Ready to record!";
+        } catch (err) {
+          status.textContent = `Error: ${err.message}`;
+        }
+      }
+
+      async function createPlayers() {
+        clearInterval(timerInterval);
+        audioBlob = new Blob(audioChunks, { type: "audio/webm" });
+        originalUrl = URL.createObjectURL(audioBlob);
+
+        // Decode and create reversed buffer
+        if (!audioContext)
+          audioContext = new (
+            window.AudioContext || window.webkitAudioContext
+          )();
+        const arrayBuffer = await audioBlob.arrayBuffer();
+        const originalBuffer = await audioContext.decodeAudioData(arrayBuffer);
+
+        // Create reversed buffer
+        reversedBuffer = audioContext.createBuffer(
+          originalBuffer.numberOfChannels,
+          originalBuffer.length,
+          originalBuffer.sampleRate,
+        );
+
+        for (
+          let channel = 0;
+          channel < originalBuffer.numberOfChannels;
+          channel++
+        ) {
+          const channelData = originalBuffer.getChannelData(channel);
+          const reversedData = new Float32Array(channelData.length);
+          for (let i = 0; i < channelData.length; i++) {
+            reversedData[i] = channelData[channelData.length - 1 - i];
+          }
+          reversedBuffer.getChannelData(channel).set(reversedData);
+        }
+
+        // Create UI
+        player.innerHTML = `
+                <div>
+                    <h3>Original</h3>
+                    <audio controls src="${originalUrl}"></audio>
+                </div>
+                <div>
+                    <h3>Reversed</h3>
+                    <button class="play-btn" onclick="playReversed()">▶️ Play Reversed</button>
+                    <div id="reversedStatus" style="margin-top: 10px; font-weight: bold;"></div>
+                </div>
+            `;
+
+        recordBtn.textContent = "🔴 Record New";
+        recordBtn.classList.remove("recording");
+        stopBtn.disabled = true;
+        timerEl.textContent = "00:00";
+        timerEl.className = "";
+        status.textContent = "Done! Try both players.";
+      }
+
+      let reversedSource;
+      function playReversed() {
+        const statusEl = document.getElementById("reversedStatus");
+
+        // Stop any existing playback
+        if (reversedSource) {
+          try {
+            reversedSource.stop();
+          } catch (e) {}
+          reversedSource.disconnect();
+        }
+
+        // Create fresh source
+        reversedSource = audioContext.createBufferSource();
+        reversedSource.buffer = reversedBuffer;
+        reversedSource.connect(audioContext.destination);
+
+        // Play and handle end
+        reversedSource.start();
+        statusEl.textContent = "Playing reversed...";
+
+        reversedSource.onended = () => {
+          statusEl.textContent = "Reversed finished. Click to play again.";
+        };
+
+        reversedSource.onerror = (e) => {
+          statusEl.textContent = "Error: " + e.message;
+        };
+      }
+
+      initRecorder();
+    </script>
+  </body>
+</html>
