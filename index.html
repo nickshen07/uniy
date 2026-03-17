@@ -25,6 +25,16 @@
         background: red;
         color: white;
       }
+      .play-btn {
+        background: #4caf50;
+        color: white;
+        border: none;
+        padding: 10px 20px;
+        margin: 5px;
+        border-radius: 5px;
+        cursor: pointer;
+        font-size: 16px;
+      }
       audio {
         width: 100%;
         margin: 10px 0;
@@ -44,19 +54,45 @@
       .danger {
         color: red;
       }
-      .play-btn {
-        background: #4caf50;
-        color: white;
-        border: none;
-        padding: 10px 20px;
-        margin: 5px;
-        border-radius: 5px;
-        cursor: pointer;
+      .section {
+        margin: 30px 0;
+        padding: 20px;
+        border: 2px solid #eee;
+        border-radius: 10px;
+        background: #f9f9f9;
+      }
+      .section h3 {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 15px;
+        font-size: 24px;
+        margin: 0 0 15px 0;
+      }
+      .thumbnail {
+        width: 64px;
+        height: 64px;
+        object-fit: cover;
+        border-radius: 12px;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+      }
+      .thumbnails {
+        margin: 20px 0;
+        display: flex;
+        justify-content: center;
+        gap: 30px;
       }
     </style>
   </head>
   <body>
-    <h1>Voice Reverser (Max 30s)</h1>
+    <h1>🎙️ Voice Reverser (Max 30s)</h1>
+
+    <!-- NEW: Two thumbnails section -->
+    <div class="thumbnails">
+      <img src="thumbnail1.png" alt="Thumbnail 1" class="thumbnail" />
+      <img src="thumbnail2.png" alt="Thumbnail 2" class="thumbnail" />
+    </div>
+
     <p>Record your voice, then play original or reversed!</p>
 
     <button id="record" disabled>🔴 Record</button>
@@ -142,7 +178,6 @@
         audioBlob = new Blob(audioChunks, { type: "audio/webm" });
         originalUrl = URL.createObjectURL(audioBlob);
 
-        // Decode and create reversed buffer
         if (!audioContext)
           audioContext = new (
             window.AudioContext || window.webkitAudioContext
@@ -150,7 +185,6 @@
         const arrayBuffer = await audioBlob.arrayBuffer();
         const originalBuffer = await audioContext.decodeAudioData(arrayBuffer);
 
-        // Create reversed buffer
         reversedBuffer = audioContext.createBuffer(
           originalBuffer.numberOfChannels,
           originalBuffer.length,
@@ -170,13 +204,12 @@
           reversedBuffer.getChannelData(channel).set(reversedData);
         }
 
-        // Create UI
         player.innerHTML = `
-                <div>
+                <div class="section">
                     <h3>Original</h3>
                     <audio controls src="${originalUrl}"></audio>
                 </div>
-                <div>
+                <div class="section">
                     <h3>Reversed</h3>
                     <button class="play-btn" onclick="playReversed()">▶️ Play Reversed</button>
                     <div id="reversedStatus" style="margin-top: 10px; font-weight: bold;"></div>
@@ -195,7 +228,6 @@
       function playReversed() {
         const statusEl = document.getElementById("reversedStatus");
 
-        // Stop any existing playback
         if (reversedSource) {
           try {
             reversedSource.stop();
@@ -203,21 +235,15 @@
           reversedSource.disconnect();
         }
 
-        // Create fresh source
         reversedSource = audioContext.createBufferSource();
         reversedSource.buffer = reversedBuffer;
         reversedSource.connect(audioContext.destination);
 
-        // Play and handle end
         reversedSource.start();
         statusEl.textContent = "Playing reversed...";
 
         reversedSource.onended = () => {
           statusEl.textContent = "Reversed finished. Click to play again.";
-        };
-
-        reversedSource.onerror = (e) => {
-          statusEl.textContent = "Error: " + e.message;
         };
       }
 
